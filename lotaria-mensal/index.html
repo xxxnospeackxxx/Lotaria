@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lotaria Mensal (0–100)</title>
+  <style>
+    :root{
+      --bg:#0b0f17;
+      --card:#121a2a;
+      --text:#e9eefc;
+      --muted:#9fb0d0;
+      --border:#22304a;
+      --glow:#ffd34d;
+      --glow2:#ff8a3d;
+      --win:#4dffb5;
+    }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 20% 0%, #152042 0%, var(--bg) 55%);
+      color: var(--text);
+      overflow-x:hidden;
+    }
+    .wrap{ max-width: 1100px; margin: 20px auto; padding: 16px; }
+    h1{ margin:0 0 10px; font-size: 20px; font-weight: 800; letter-spacing: .2px; }
+    .card{
+      border:1px solid var(--border);
+      background: rgba(18,26,42,.75);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    }
+    .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    label{ display:block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
+    input{
+      width: 260px;
+      max-width: 100%;
+      box-sizing:border-box;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border:1px solid var(--border);
+      background: rgba(10,14,25,.6);
+      color: var(--text);
+      outline:none;
+    }
+    input::placeholder{ color:#7f90b3; }
+    button{
+      appearance:none;
+      border:1px solid var(--border);
+      background: linear-gradient(180deg, #1a2744, #111a30);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-weight: 800;
+      cursor:pointer;
+    }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+
+    .stats{ display:flex; gap:10px; flex-wrap:wrap; margin-top: 10px; }
+    .stat{
+      padding: 10px 12px;
+      border:1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(18,26,42,.55);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .stat b{ color: var(--text); }
+    .msg{
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(34,48,74,.9);
+      background: rgba(10,14,25,.35);
+      line-height: 1.4;
+      min-height: 22px;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .cell{
+      border:1px solid var(--border);
+      background: rgba(18,26,42,.55);
+      border-radius: 14px;
+      height: 52px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight: 900;
+      user-select:none;
+      position:relative;
+      overflow:hidden;
+      transition: box-shadow .12s ease, border-color .12s ease, transform .12s ease;
+    }
+    .cell::after{
+      content:"";
+      position:absolute;
+      inset:-30px;
+      background: radial-gradient(circle at 30% 20%, rgba(255,211,77,.35), transparent 55%);
+      opacity:0;
+      transition: opacity .12s ease;
+    }
+    .cell.active{
+      border-color: rgba(255,211,77,.85);
+      box-shadow:
+        0 0 0 2px rgba(255,211,77,.25),
+        0 0 18px rgba(255,211,77,.35),
+        0 0 28px rgba(255,138,61,.18);
+      transform: translateY(-1px);
+    }
+    .cell.active::after{ opacity:1; }
+    .cell.winner{
+      border-color: rgba(77,255,181,.95);
+      box-shadow:
+        0 0 0 2px rgba(77,255,181,.22),
+        0 0 20px rgba(77,255,181,.40);
+    }
+    .cell.winner::after{
+      background: radial-gradient(circle at 30% 20%, rgba(77,255,181,.35), transparent 55%);
+      opacity:1;
+    }
+
+    /* Confetti canvas por cima de tudo */
+    #confettiCanvas{
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="confettiCanvas"></canvas>
+
+  <div class="wrap">
+    <h1>Lotaria Mensal (0–100)</h1>
+
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Username do Telegram</label>
+          <input id="username" placeholder="@teuuser" />
+        </div>
+
+        <div style="margin-top: 28px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button id="startBtn">Start (30s)</button>
+          <button id="resetBtn">Repor</button>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">Tempo: <b id="timeLeft">30.0</b>s</div>
+        <div class="stat">Vencedor do mês: <b id="winnerFixed">—</b></div>
+        <div class="stat">Resultado: <b id="resultNum">—</b></div>
+      </div>
+
+      <div class="msg" id="msg">
+        Escreve o teu @username e carrega em Start.
+      </div>
+
+      <div id="grid" class="grid" aria-label="Grelha de números"></div>
+    </div>
+  </div>
+
+  <script>
+    // ========= CONFIGURAÇÃO =========
+    const MIN = 0;
+    const MAX = 100;
+
+    // MUDA AQUI O VENCEDOR DO MÊS:
+    const WINNING_NUMBER = 37;
+
+    const DURATION_MS = 30_000;  // 30s
+    const TICK_MS = 60;          // velocidade da luz
+
+    // ========= ELEMENTOS =========
+    const usernameEl = document.getElementById("username");
+    const startBtn = document.getElementById("startBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const timeLeftEl = document.getElementById("timeLeft");
+    const winnerFixedEl = document.getElementById("winnerFixed");
+    const resultNumEl = document.getElementById("resultNum");
+    const msgEl = document.getElementById("msg");
+    const gridEl = document.getElementById("grid");
+
+    const canvas = document.getElementById("confettiCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // ========= ESTADO =========
+    const cells = [];
+    let running = false;
+    let activeIndex = -1;
+    let timer = null;
+    let countdown = null;
+
+    // ========= UI HELPERS =========
+    function normalizeUsername(u){
+      const s = (u || "").trim();
+      if (!s) return "";
+      return s.startsWith("@") ? s : ("@" + s);
+    }
+
+    function buildGrid(){
+      gridEl.innerHTML = "";
+      cells.length = 0;
+      for (let n = MIN; n <= MAX; n++){
+        const div = document.createElement("div");
+        div.className = "cell";
+        div.textContent = n;
+        div.dataset.value = String(n);
+        gridEl.appendChild(div);
+        cells.push(div);
+      }
+    }
+
+    function clearHighlights(){
+      cells.forEach(c => c.classList.remove("active", "winner"));
+      activeIndex = -1;
+      timeLeftEl.textContent = "30.0";
+      resultNumEl.textContent = "—";
+      msgEl.textContent = "Escreve o teu @username e carrega em Start.";
+    }
+
+    function pickRandomIndex(exceptIndex){
+      if (cells.length <= 1) return 0;
+      let idx;
+      do { idx = Math.floor(Math.random() * cells.length); }
+      while (idx === exceptIndex);
+      return idx;
+    }
+
+    function setActive(idx){
+      if (activeIndex >= 0) cells[activeIndex].classList.remove("active");
+      activeIndex = idx;
+      cells[activeIndex].classList.add("active");
+    }
+
+    function setWinnerNumberFixed(){
+      // encontra o índice do número vencedor fixo
+      const idx = WINNING_NUMBER - MIN;
+      cells.forEach(c => c.classList.remove("active", "winner"));
+      cells[idx].classList.add("winner");
+      resultNumEl.textContent = String(WINNING_NUMBER);
+      cells[idx].scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    }
+
+    // ========= SORTEIO =========
+    function start(){
+      if (running) return;
+
+      const user = normalizeUsername(usernameEl.value);
+      if (!user){
+        msgEl.textContent = "Escreve primeiro o teu username do Telegram (ex: @joao123).";
+        return;
+      }
+
+      running = true;
+      startBtn.disabled = true;
+      usernameEl.disabled = true;
+
+      // reset visual
+      cells.forEach(c => c.classList.remove("active", "winner"));
+      resultNumEl.textContent = "—";
+      msgEl.textContent = `A sortear... (username: ${user})`;
+
+      const startedAt = performance.now();
+      const endAt = startedAt + DURATION_MS;
+
+      timer = setInterval(() => {
+        const idx = pickRandomIndex(activeIndex);
+        setActive(idx);
+      }, TICK_MS);
+
+      countdown = setInterval(() => {
+        const now = performance.now();
+        const left = Math.max(0, endAt - now);
+        timeLeftEl.textContent = (left / 1000).toFixed(1);
+        if (left <= 0) stop(user);
+      }, 50);
+    }
+
+    function stop(user){
+      if (!running) return;
+      running = false;
+
+      clearInterval(timer);
+      clearInterval(countdown);
+      timer = null;
+      countdown = null;
+
+      // pára SEMPRE no número fixo
+      setWinnerNumberFixed();
+
+      msgEl.textContent = `🎉 Parabéns! Vencedor deste mês: ${WINNING_NUMBER} (username: ${user})`;
+      launchConfetti(220); // confetti
+
+      startBtn.disabled = false;
+      usernameEl.disabled = false;
+    }
+
+    function resetAll(){
+      if (running){
+        running = false;
+        clearInterval(timer);
+        clearInterval(countdown);
+      }
+      startBtn.disabled = false;
+      usernameEl.disabled = false;
+      clearHighlights();
+      stopConfetti();
+    }
+
+    // ========= CONFETTI (simples em canvas) =========
+    let confetti = [];
+    let confettiAnim = null;
+
+    function resizeCanvas(){
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resizeCanvas);
+
+    function launchConfetti(count){
+      resizeCanvas();
+      confetti = [];
+      for (let i = 0; i < count; i++){
+        confetti.push({
+          x: Math.random() * canvas.width,
+          y: -20 - Math.random() * canvas.height * 0.3,
+          r: 4 + Math.random() * 6,
+          vx: -2 + Math.random() * 4,
+          vy: 2 + Math.random() * 6,
+          rot: Math.random() * Math.PI,
+          vr: -0.2 + Math.random() * 0.4,
+          // cores random simples
+          c: `hsl(${Math.floor(Math.random()*360)}, 90%, 60%)`,
+          life: 240 + Math.floor(Math.random()*120),
+        });
+      }
+
+      if (confettiAnim) cancelAnimationFrame(confettiAnim);
+      tickConfetti();
+    }
+
+    function tickConfetti(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      for (const p of confetti){
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rot += p.vr;
+        p.vy += 0.03; // gravidade leve
+        p.life -= 1;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle = p.c;
+        ctx.fillRect(-p.r, -p.r/2, p.r*2, p.r);
+        ctx.restore();
+      }
+
+      confetti = confetti.filter(p => p.life > 0 && p.y < canvas.height + 50);
+
+      if (confetti.length > 0){
+        confettiAnim = requestAnimationFrame(tickConfetti);
+      } else {
+        stopConfetti();
+      }
+    }
+
+    function stopConfetti(){
+      if (confettiAnim) cancelAnimationFrame(confettiAnim);
+      confettiAnim = null;
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      confetti = [];
+    }
+
+    // ========= EVENTOS =========
+    startBtn.addEventListener("click", start);
+    resetBtn.addEventListener("click", resetAll);
+    usernameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") start();
+    });
+
+    // ========= INIT =========
+    winnerFixedEl.textContent = String(WINNING_NUMBER);
+    buildGrid();
+    clearHighlights();
+    resizeCanvas();
+  </script>
+</body>
+</html>
