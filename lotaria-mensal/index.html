@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lotaria Mensal (0–100)</title>
+  <title>Lucky 0–100 (Monthly)</title>
   <style>
     :root{
       --bg:#0b0f17;
@@ -125,7 +125,6 @@
       opacity:1;
     }
 
-    /* Confetti canvas por cima de tudo */
     #confettiCanvas{
       position: fixed;
       inset: 0;
@@ -139,52 +138,85 @@
   <canvas id="confettiCanvas"></canvas>
 
   <div class="wrap">
-    <h1>Lotaria Mensal (0–100)</h1>
+    <h1>Lucky 0–100 (Monthly Draw)</h1>
 
     <div class="card">
       <div class="row">
         <div>
-          <label>Username do Telegram</label>
-          <input id="username" placeholder="@teuuser" />
+          <label>Telegram username</label>
+          <input id="username" placeholder="@yourname" />
         </div>
 
         <div style="margin-top: 28px; display:flex; gap:10px; flex-wrap:wrap;">
           <button id="startBtn">Start (30s)</button>
-          <button id="resetBtn">Repor</button>
+          <button id="resetBtn">Reset</button>
         </div>
       </div>
 
       <div class="stats">
-        <div class="stat">Tempo: <b id="timeLeft">30.0</b>s</div>
-        <div class="stat">Vencedor do mês: <b id="winnerFixed">—</b></div>
-        <div class="stat">Resultado: <b id="resultNum">—</b></div>
+        <div class="stat">Time: <b id="timeLeft">30.0</b>s</div>
+        <div class="stat">Monthly winning token: <b id="luckToken">—</b></div>
+        <div class="stat">Result: <b id="resultNum">—</b></div>
       </div>
 
       <div class="msg" id="msg">
-        Escreve o teu @username e carrega em Start.
+        Enter your Telegram username and press Start.
       </div>
 
-      <div id="grid" class="grid" aria-label="Grelha de números"></div>
+      <div id="grid" class="grid" aria-label="Number grid"></div>
     </div>
   </div>
 
+  <!-- =========================
+       1) "LOGIN" + PASSWORD
+       ========================= -->
   <script>
-    // ========= CONFIGURAÇÃO =========
+    // ✅ MUDA A PASSWORD AQUI (a que tu vais mandar às pessoas)
+    const PAGE_PASSWORD = "BigWinForMe";
+
+    // pede password ao abrir
+    const p = prompt("🔒 Protected page\n\nEnter password:");
+    if (p !== PAGE_PASSWORD) {
+      document.body.innerHTML =
+        "<h1 style='text-align:center;margin-top:40px;font-family:system-ui;'>❌ Access denied</h1>";
+      throw new Error("Access denied");
+    }
+  </script>
+
+  <!-- =========================
+       2) APP
+       ========================= -->
+  <script>
+    // ========= CONFIG =========
     const MIN = 0;
     const MAX = 100;
 
-    // MUDA AQUI O VENCEDOR DO MÊS:
-    const WINNING_NUMBER = 37;
+    // ✅ Token "criativo" no link: ?luck=luck0100  (não mostra o número)
+    // ✅ MUDA AQUI o mapa token -> número vencedor
+    const LUCK_MAP = {
+      "luck0100": 37
+      // exemplos para meses futuros:
+      // "luck0200": 12,
+      // "luck0300": 88
+    };
 
-    const DURATION_MS = 30_000;  // 30s
-    const TICK_MS = 60;          // velocidade da luz
+    const DURATION_MS = 30_000;
+    const TICK_MS = 60;
 
-    // ========= ELEMENTOS =========
+    // ========= READ TOKEN FROM LINK =========
+    const params = new URLSearchParams(window.location.search);
+    const token = (params.get("luck") || "").trim();
+
+    // se token inválido, usa o default (podes mudar)
+    const WINNING_NUMBER =
+      (token && Number.isInteger(LUCK_MAP[token]) ? LUCK_MAP[token] : 37);
+
+    // ========= ELEMENTS =========
     const usernameEl = document.getElementById("username");
     const startBtn = document.getElementById("startBtn");
     const resetBtn = document.getElementById("resetBtn");
     const timeLeftEl = document.getElementById("timeLeft");
-    const winnerFixedEl = document.getElementById("winnerFixed");
+    const luckTokenEl = document.getElementById("luckToken");
     const resultNumEl = document.getElementById("resultNum");
     const msgEl = document.getElementById("msg");
     const gridEl = document.getElementById("grid");
@@ -192,7 +224,7 @@
     const canvas = document.getElementById("confettiCanvas");
     const ctx = canvas.getContext("2d");
 
-    // ========= ESTADO =========
+    // ========= STATE =========
     const cells = [];
     let running = false;
     let activeIndex = -1;
@@ -224,7 +256,12 @@
       activeIndex = -1;
       timeLeftEl.textContent = "30.0";
       resultNumEl.textContent = "—";
-      msgEl.textContent = "Escreve o teu @username e carrega em Start.";
+
+      if (token) {
+        msgEl.textContent = "Enter your Telegram username and press Start.";
+      } else {
+        msgEl.textContent = "Missing token in link (use ?luck=luck0100).";
+      }
     }
 
     function pickRandomIndex(exceptIndex){
@@ -241,8 +278,7 @@
       cells[activeIndex].classList.add("active");
     }
 
-    function setWinnerNumberFixed(){
-      // encontra o índice do número vencedor fixo
+    function setWinnerFixed(){
       const idx = WINNING_NUMBER - MIN;
       cells.forEach(c => c.classList.remove("active", "winner"));
       cells[idx].classList.add("winner");
@@ -250,13 +286,18 @@
       cells[idx].scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     }
 
-    // ========= SORTEIO =========
+    // ========= DRAW =========
     function start(){
       if (running) return;
 
+      if (!token || !(token in LUCK_MAP)) {
+        msgEl.textContent = "Invalid link token. Ask the organizer for the correct link.";
+        return;
+      }
+
       const user = normalizeUsername(usernameEl.value);
       if (!user){
-        msgEl.textContent = "Escreve primeiro o teu username do Telegram (ex: @joao123).";
+        msgEl.textContent = "Type your Telegram username first (ex: @john123).";
         return;
       }
 
@@ -264,10 +305,9 @@
       startBtn.disabled = true;
       usernameEl.disabled = true;
 
-      // reset visual
       cells.forEach(c => c.classList.remove("active", "winner"));
       resultNumEl.textContent = "—";
-      msgEl.textContent = `A sortear... (username: ${user})`;
+      msgEl.textContent = `Drawing... (user: ${user})`;
 
       const startedAt = performance.now();
       const endAt = startedAt + DURATION_MS;
@@ -294,11 +334,11 @@
       timer = null;
       countdown = null;
 
-      // pára SEMPRE no número fixo
-      setWinnerNumberFixed();
+      // ✅ always stop on fixed number
+      setWinnerFixed();
 
-      msgEl.textContent = `🎉 Parabéns! Vencedor deste mês: ${WINNING_NUMBER} (username: ${user})`;
-      launchConfetti(220); // confetti
+      msgEl.textContent = `🎉 Congratulations! Monthly winner is ${WINNING_NUMBER} (user: ${user})`;
+      launchConfetti(220);
 
       startBtn.disabled = false;
       usernameEl.disabled = false;
@@ -316,7 +356,7 @@
       stopConfetti();
     }
 
-    // ========= CONFETTI (simples em canvas) =========
+    // ========= CONFETTI =========
     let confetti = [];
     let confettiAnim = null;
 
@@ -338,12 +378,10 @@
           vy: 2 + Math.random() * 6,
           rot: Math.random() * Math.PI,
           vr: -0.2 + Math.random() * 0.4,
-          // cores random simples
           c: `hsl(${Math.floor(Math.random()*360)}, 90%, 60%)`,
           life: 240 + Math.floor(Math.random()*120),
         });
       }
-
       if (confettiAnim) cancelAnimationFrame(confettiAnim);
       tickConfetti();
     }
@@ -355,7 +393,7 @@
         p.x += p.vx;
         p.y += p.vy;
         p.rot += p.vr;
-        p.vy += 0.03; // gravidade leve
+        p.vy += 0.03;
         p.life -= 1;
 
         ctx.save();
@@ -382,18 +420,16 @@
       confetti = [];
     }
 
-    // ========= EVENTOS =========
+    // ========= EVENTS =========
     startBtn.addEventListener("click", start);
     resetBtn.addEventListener("click", resetAll);
-    usernameEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") start();
-    });
+    usernameEl.addEventListener("keydown", (e) => { if (e.key === "Enter") start(); });
 
     // ========= INIT =========
-    winnerFixedEl.textContent = String(WINNING_NUMBER);
     buildGrid();
     clearHighlights();
     resizeCanvas();
+    luckTokenEl.textContent = token ? token : "—";
   </script>
 </body>
 </html>
