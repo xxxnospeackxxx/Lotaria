@@ -31,7 +31,7 @@
       padding: 14px;
       box-shadow: 0 10px 30px rgba(0,0,0,.25);
     }
-    .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
     label{ display:block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
     input{
       width: 260px;
@@ -52,21 +52,14 @@
       color: var(--text);
       padding: 10px 14px;
       border-radius: 12px;
-      font-weight: 800;
+      font-weight: 900;
       cursor:pointer;
+      display:flex;
+      align-items:center;
+      gap:10px;
     }
     button:disabled{ opacity:.55; cursor:not-allowed; }
 
-    .stats{ display:flex; gap:10px; flex-wrap:wrap; margin-top: 10px; }
-    .stat{
-      padding: 10px 12px;
-      border:1px solid var(--border);
-      border-radius: 12px;
-      background: rgba(18,26,42,.55);
-      color: var(--muted);
-      font-size: 14px;
-    }
-    .stat b{ color: var(--text); }
     .msg{
       margin-top: 10px;
       padding: 12px;
@@ -125,17 +118,76 @@
       opacity:1;
     }
 
+    /* Confetti canvas */
     #confettiCanvas{
       position: fixed;
       inset: 0;
       pointer-events: none;
       z-index: 9999;
     }
+
+    /* Overlay winner gigante */
+    .overlay{
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: rgba(5,8,16,.55);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    .hidden{ display:none; }
+
+    .overlayCard{
+      text-align:center;
+      padding: 22px 26px;
+      border-radius: 22px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(18,26,42,.70);
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+      transform-origin: center;
+      animation: forwardBack 1.1s ease-in-out infinite;
+    }
+    .overlayTitle{
+      font-size: clamp(28px, 4vw, 56px);
+      font-weight: 1000;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+    }
+    .overlayNum{
+      margin-top: 10px;
+      font-size: clamp(72px, 8vw, 120px);
+      font-weight: 1100;
+      color: var(--win);
+      text-shadow: 0 0 22px rgba(77,255,181,.35);
+    }
+    @keyframes forwardBack{
+      0%   { transform: translateX(-14px) scale(1.00); }
+      50%  { transform: translateX(14px)  scale(1.10); }
+      100% { transform: translateX(-14px) scale(1.00); }
+    }
+
+    .tiny{
+      margin-left:auto;
+      font-size: 12px;
+      color: var(--muted);
+      opacity:.85;
+    }
   </style>
 </head>
 
 <body>
   <canvas id="confettiCanvas"></canvas>
+
+  <!-- Overlay grande -->
+  <div id="winnerOverlay" class="overlay hidden" aria-hidden="true">
+    <div class="overlayCard">
+      <div class="overlayTitle">Congratulations!</div>
+      <div id="overlayNum" class="overlayNum">—</div>
+    </div>
+  </div>
 
   <div class="wrap">
     <h1>Lucky 0–100 (Monthly Draw)</h1>
@@ -147,34 +199,26 @@
           <input id="username" placeholder="@yourname" />
         </div>
 
-        <div style="margin-top: 28px; display:flex; gap:10px; flex-wrap:wrap;">
-          <button id="startBtn">Start (30s)</button>
-          <button id="resetBtn">Reset</button>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <!-- sem "Start" -->
+          <button id="playBtn" title="Play">
+            <span aria-hidden="true">▶</span> PLAY
+          </button>
+          <button id="resetBtn" title="Reset">RESET</button>
         </div>
+
+        <div class="tiny" id="tokenHint"></div>
       </div>
 
-      <div class="stats">
-        <div class="stat">Time: <b id="timeLeft">30.0</b>s</div>
-        <div class="stat">Monthly winning token: <b id="luckToken">—</b></div>
-        <div class="stat">Result: <b id="resultNum">—</b></div>
-      </div>
-
-      <div class="msg" id="msg">
-        Enter your Telegram username and press Start.
-      </div>
+      <div class="msg" id="msg">Enter your Telegram username and press PLAY.</div>
 
       <div id="grid" class="grid" aria-label="Number grid"></div>
     </div>
   </div>
 
-  <!-- =========================
-       1) "LOGIN" + PASSWORD
-       ========================= -->
+  <!-- 1) Login/password -->
   <script>
-    // ✅ MUDA A PASSWORD AQUI (a que tu vais mandar às pessoas)
     const PAGE_PASSWORD = "BigWinForMe";
-
-    // pede password ao abrir
     const p = prompt("🔒 Protected page\n\nEnter password:");
     if (p !== PAGE_PASSWORD) {
       document.body.innerHTML =
@@ -183,43 +227,39 @@
     }
   </script>
 
-  <!-- =========================
-       2) APP
-       ========================= -->
+  <!-- 2) App -->
   <script>
     // ========= CONFIG =========
     const MIN = 0;
     const MAX = 100;
 
-    // ✅ Token "criativo" no link: ?luck=luck0100  (não mostra o número)
-    // ✅ MUDA AQUI o mapa token -> número vencedor
+    // Token "criativo" no link: ?luck=luck0100 (não mostra o número)
     const LUCK_MAP = {
       "luck0100": 37
-      // exemplos para meses futuros:
-      // "luck0200": 12,
-      // "luck0300": 88
     };
 
-    const DURATION_MS = 30_000;
+    // ✅ Duração fixa (sem mostrar tempo): 15 segundos
+    const DURATION_MS = 15_000;
     const TICK_MS = 60;
 
-    // ========= READ TOKEN FROM LINK =========
+    // ========= TOKEN =========
     const params = new URLSearchParams(window.location.search);
     const token = (params.get("luck") || "").trim();
 
-    // se token inválido, usa o default (podes mudar)
+    // Se token inválido, usa default (37) mas avisa que o link está errado
     const WINNING_NUMBER =
       (token && Number.isInteger(LUCK_MAP[token]) ? LUCK_MAP[token] : 37);
 
     // ========= ELEMENTS =========
     const usernameEl = document.getElementById("username");
-    const startBtn = document.getElementById("startBtn");
+    const playBtn = document.getElementById("playBtn");
     const resetBtn = document.getElementById("resetBtn");
-    const timeLeftEl = document.getElementById("timeLeft");
-    const luckTokenEl = document.getElementById("luckToken");
-    const resultNumEl = document.getElementById("resultNum");
     const msgEl = document.getElementById("msg");
     const gridEl = document.getElementById("grid");
+    const tokenHintEl = document.getElementById("tokenHint");
+
+    const overlay = document.getElementById("winnerOverlay");
+    const overlayNumEl = document.getElementById("overlayNum");
 
     const canvas = document.getElementById("confettiCanvas");
     const ctx = canvas.getContext("2d");
@@ -228,8 +268,8 @@
     const cells = [];
     let running = false;
     let activeIndex = -1;
-    let timer = null;
-    let countdown = null;
+    let spinTimer = null;
+    let stopTimeout = null;
 
     // ========= UI HELPERS =========
     function normalizeUsername(u){
@@ -251,19 +291,6 @@
       }
     }
 
-    function clearHighlights(){
-      cells.forEach(c => c.classList.remove("active", "winner"));
-      activeIndex = -1;
-      timeLeftEl.textContent = "30.0";
-      resultNumEl.textContent = "—";
-
-      if (token) {
-        msgEl.textContent = "Enter your Telegram username and press Start.";
-      } else {
-        msgEl.textContent = "Missing token in link (use ?luck=luck0100).";
-      }
-    }
-
     function pickRandomIndex(exceptIndex){
       if (cells.length <= 1) return 0;
       let idx;
@@ -282,14 +309,32 @@
       const idx = WINNING_NUMBER - MIN;
       cells.forEach(c => c.classList.remove("active", "winner"));
       cells[idx].classList.add("winner");
-      resultNumEl.textContent = String(WINNING_NUMBER);
       cells[idx].scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    }
+
+    function showOverlay(number){
+      overlayNumEl.textContent = String(number);
+      overlay.classList.remove("hidden");
+      overlay.setAttribute("aria-hidden", "false");
+    }
+
+    function hideOverlay(){
+      overlay.classList.add("hidden");
+      overlay.setAttribute("aria-hidden", "true");
+    }
+
+    function clearAllVisual(){
+      cells.forEach(c => c.classList.remove("active", "winner"));
+      activeIndex = -1;
+      hideOverlay();
+      stopConfetti();
     }
 
     // ========= DRAW =========
     function start(){
       if (running) return;
 
+      // exigir token válido (para só funcionar com link certo)
       if (!token || !(token in LUCK_MAP)) {
         msgEl.textContent = "Invalid link token. Ask the organizer for the correct link.";
         return;
@@ -302,58 +347,58 @@
       }
 
       running = true;
-      startBtn.disabled = true;
+      playBtn.disabled = true;
       usernameEl.disabled = true;
+      hideOverlay();
 
       cells.forEach(c => c.classList.remove("active", "winner"));
-      resultNumEl.textContent = "—";
-      msgEl.textContent = `Drawing... (user: ${user})`;
+      msgEl.textContent = "Good luck…";
 
-      const startedAt = performance.now();
-      const endAt = startedAt + DURATION_MS;
-
-      timer = setInterval(() => {
+      // luz a rodar
+      spinTimer = setInterval(() => {
         const idx = pickRandomIndex(activeIndex);
         setActive(idx);
       }, TICK_MS);
 
-      countdown = setInterval(() => {
-        const now = performance.now();
-        const left = Math.max(0, endAt - now);
-        timeLeftEl.textContent = (left / 1000).toFixed(1);
-        if (left <= 0) stop(user);
-      }, 50);
+      // parar ao fim de 15s, sem mostrar countdown
+      stopTimeout = setTimeout(() => stop(user), DURATION_MS);
     }
 
     function stop(user){
       if (!running) return;
       running = false;
 
-      clearInterval(timer);
-      clearInterval(countdown);
-      timer = null;
-      countdown = null;
+      clearInterval(spinTimer);
+      clearTimeout(stopTimeout);
+      spinTimer = null;
+      stopTimeout = null;
 
-      // ✅ always stop on fixed number
+      // pára SEMPRE no número fixo
       setWinnerFixed();
 
-      msgEl.textContent = `🎉 Congratulations! Monthly winner is ${WINNING_NUMBER} (user: ${user})`;
-      launchConfetti(220);
+      // overlay gigante + confetti
+      showOverlay(WINNING_NUMBER);
+      launchConfetti(260);
 
-      startBtn.disabled = false;
+      msgEl.textContent = `Winner: ${WINNING_NUMBER} — ${user}`;
+
+      playBtn.disabled = false;
       usernameEl.disabled = false;
+
+      // esconder overlay depois de uns segundos (opcional)
+      setTimeout(() => hideOverlay(), 6500);
     }
 
     function resetAll(){
       if (running){
         running = false;
-        clearInterval(timer);
-        clearInterval(countdown);
+        clearInterval(spinTimer);
+        clearTimeout(stopTimeout);
       }
-      startBtn.disabled = false;
+      playBtn.disabled = false;
       usernameEl.disabled = false;
-      clearHighlights();
-      stopConfetti();
+      msgEl.textContent = "Enter your Telegram username and press PLAY.";
+      clearAllVisual();
     }
 
     // ========= CONFETTI =========
@@ -379,7 +424,7 @@
           rot: Math.random() * Math.PI,
           vr: -0.2 + Math.random() * 0.4,
           c: `hsl(${Math.floor(Math.random()*360)}, 90%, 60%)`,
-          life: 240 + Math.floor(Math.random()*120),
+          life: 240 + Math.floor(Math.random()*140),
         });
       }
       if (confettiAnim) cancelAnimationFrame(confettiAnim);
@@ -421,15 +466,17 @@
     }
 
     // ========= EVENTS =========
-    startBtn.addEventListener("click", start);
+    playBtn.addEventListener("click", start);
     resetBtn.addEventListener("click", resetAll);
     usernameEl.addEventListener("keydown", (e) => { if (e.key === "Enter") start(); });
 
     // ========= INIT =========
     buildGrid();
-    clearHighlights();
+    clearAllVisual();
     resizeCanvas();
-    luckTokenEl.textContent = token ? token : "—";
+
+    // hint pequeno (podes apagar se quiseres)
+    tokenHintEl.textContent = token ? `token: ${token}` : "";
   </script>
 </body>
 </html>
